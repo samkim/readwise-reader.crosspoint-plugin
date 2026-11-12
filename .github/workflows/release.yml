@@ -15,8 +15,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm test
@@ -29,11 +29,11 @@ jobs:
             exit 1
           fi
       - run: node tools/pack.mjs
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: crosspoint-reader/crosspoint-plugin-hub
           path: .plugin-hub
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python3 tools/check_with_plugin_hub.py .plugin-hub
