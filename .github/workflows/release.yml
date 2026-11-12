@@ -1,0 +1,48 @@
+name: Release
+
+# Pushing a vX.Y.Z tag that matches manifest.json publishes the stable,
+# non-draft, non-prerelease GitHub Release that Plugin Hub installs from.
+# Plugin Hub reads the payload from the tag; the attached ZIP is for manual
+# installation. Never move or reuse a tag: release a new version instead.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm test
+      - name: Check the tag matches the manifest and package versions
+        run: |
+          version=$(node -p "require('./readwise-reader.crosspoint-plugin/manifest.json').version")
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ] || [ "$pkg" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME, manifest $version and package.json $pkg must agree." >&2
+            exit 1
+          fi
+      - run: node tools/pack.mjs
+      - uses: actions/checkout@v4
+        with:
+          repository: crosspoint-reader/crosspoint-plugin-hub
+          path: .plugin-hub
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 tools/check_with_plugin_hub.py .plugin-hub
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## "v"$" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "Readwise Reader $version" --notes-file notes.md \
+            "dist/readwise-reader-$version.crosspoint-plugin.zip"

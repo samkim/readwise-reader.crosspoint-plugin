@@ -1,0 +1,39 @@
+{
+  "title": "Readwise Reader",
+  "token": {
+    "file": "config.json",
+    "path": "token"
+  },
+  "browse": {
+    "format": "json",
+    "url": "https://readwise.io/api/v3/list/?category=epub&location=later&limit=100",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Token {token}"
+    },
+    "items": "results",
+    "fields": {
+      "title": "title",
+      "author": "author",
+      "id": "id"
+    },
+    "page_size": 8,
+    "lists": [
+      { "title": "Inbox", "url": "https://readwise.io/api/v3/list/?category=epub&location=new&limit=100" },
+      { "title": "Later", "url": "https://readwise.io/api/v3/list/?category=epub&location=later&limit=100" },
+      { "title": "Shortlist", "url": "https://readwise.io/api/v3/list/?category=epub&location=shortlist&limit=100" },
+      { "title": "Archive", "url": "https://readwise.io/api/v3/list/?category=epub&location=archive&limit=100" },
+      { "title": "All EPUBs", "url": "https://readwise.io/api/v3/list/?category=epub&limit=100" }
+    ]
+  },
+  "download": {
+    "url": "https://readwise.io/api/v3/list/?id={id}&withRawSourceUrl=true",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Token {token}"
+    },
+    "url_path": "results.0.raw_source_url",
+    "dest_dir": "/Readwise",
+    "filename": "{title}.epub"
+  }
+}

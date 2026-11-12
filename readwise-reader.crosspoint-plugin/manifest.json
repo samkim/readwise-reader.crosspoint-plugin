@@ -1,0 +1,19 @@
+{
+  "name": "readwise-reader",
+  "title": "Readwise Reader",
+  "description": "Download the EPUBs in your Readwise Reader library to the reader.",
+  "author": "Sam Kim",
+  "version": "0.1.0",
+  "mount": "settings",
+  "compatibility": {
+    "firmware_family": ["crosspoint"],
+    "plugin_api_min": 1
+  },
+  "files": [
+    "manifest.json",
+    "device.json",
+    "plugin.js",
+    "README.md",
+    "DETAILS.md"
+  ]
+}
