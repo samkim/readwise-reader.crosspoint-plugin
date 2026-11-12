@@ -35,7 +35,12 @@ function fakeApi({ responses = {}, files = {}, dir = DIR } = {}) {
       calls.push(JSON.parse(JSON.stringify({ method, url, headers, body })));
       const r = responses[url];
       if (!r) throw new Error('no fake response for ' + url);
-      return typeof r === 'function' ? r() : { headers: [], body: '', ...r };
+      const res = typeof r === 'function' ? r() : { headers: [], body: '', ...r };
+      // Like the device: a 204 has no Content-Length or Transfer-Encoding, so
+      // the firmware HTTP client waits for a close that a keep-alive server
+      // never sends, and /api/relay answers 502 (SecureHttpClient readUntilClose).
+      if (res.status === 204) throw new Error('/api/relay 502: relay failed; large bodies need /api/fetch');
+      return res;
     },
     async writeFile(path, dataB64) {
       files[path] = Buffer.from(dataB64, 'base64').toString('utf8');
@@ -88,11 +93,27 @@ test('configPath uses the installed plugin dir, with a fallback', async () => {
 
 test('connect validates the token with Readwise, then writes config.json', async () => {
   const p = await loadPlugin();
-  const api = fakeApi({ responses: { [AUTH]: { status: 204 } } });
+  const api = fakeApi({ responses: { [AUTH]: { status: 204 }, [COUNT]: { status: 200, body: '{"count": 5, "results": []}' } } });
   const result = await p.connect(api, 'Token ' + GOOD_TOKEN);
-  assert.equal(result.ok, true);
-  assert.deepEqual(api.calls[0], { method: 'GET', url: AUTH, headers: { Authorization: 'Token ' + GOOD_TOKEN }, body: '' });
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.count, 5);
+  assert.deepEqual(api.calls, [{ method: 'GET', url: COUNT, headers: { Authorization: 'Token ' + GOOD_TOKEN }, body: '' }]);
   assert.deepEqual(JSON.parse(api.files[DIR + '/config.json']), { token: GOOD_TOKEN });
+});
+
+test('regression: never depends on the 204 auth endpoint, which the device relay cannot read', async () => {
+  const p = await loadPlugin();
+  const api = fakeApi({ responses: { [AUTH]: { status: 204 }, [COUNT]: { status: 200, body: '{"count": 0, "results": []}' } } });
+  assert.equal((await p.checkToken(api, GOOD_TOKEN)).ok, true);
+  assert.ok(!api.calls.some((c) => c.url === AUTH), 'no request to /api/v2/auth/');
+});
+
+test('checkToken rejects a 200 that is not a Readwise list response', async () => {
+  const p = await loadPlugin();
+  const api = fakeApi({ responses: { [COUNT]: { status: 200, body: '<html>captive portal</html>' } } });
+  const result = await p.checkToken(api, GOOD_TOKEN);
+  assert.equal(result.ok, false);
+  assert.match(result.message, /unexpected answer/);
 });
 
 test('connect does not write anything for a rejected, rate-limited or unreachable token check', async () => {
@@ -104,7 +125,7 @@ test('connect does not write anything for a rejected, rate-limited or unreachabl
     [() => { throw new Error('/api/relay 502: relay failed'); }, /Could not reach Readwise/],
   ];
   for (const [response, message] of cases) {
-    const api = fakeApi({ responses: { [AUTH]: response } });
+    const api = fakeApi({ responses: { [COUNT]: response } });
     const result = await p.connect(api, GOOD_TOKEN);
     assert.equal(result.ok, false);
     assert.match(result.message, message);
@@ -123,7 +144,7 @@ test('connect rejects a malformed token without any request', async () => {
 
 test('connect reports a failed SD write', async () => {
   const p = await loadPlugin();
-  const api = fakeApi({ responses: { [AUTH]: { status: 204 } } });
+  const api = fakeApi({ responses: { [COUNT]: { status: 200, body: '{"count": 1}' } } });
   api.writeFile = async () => { throw new Error('/api/plugin-fs 403: plugin system disabled'); };
   const result = await p.connect(api, GOOD_TOKEN);
   assert.equal(result.ok, false);
@@ -175,8 +196,10 @@ test('settings card: not connected -> Connect -> connected -> Disconnect', async
   assert.equal(el('connect').disabled, false);
 
   el('token').value = GOOD_TOKEN;
+  const before = api.calls.length;
   await el('connect').onclick();
   assert.match(el('status').textContent, /^Connected\. 3 EPUBs in your Reader library\./);
+  assert.equal(api.calls.length - before, 1, 'one Readwise request per Connect (list endpoint is rate limited)');
   assert.equal(el('token').value, '', 'token field cleared');
   assert.equal(el('signin').style.display, 'none');
   assert.equal(el('connected').style.display, '');

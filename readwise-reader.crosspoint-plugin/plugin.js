@@ -4,7 +4,6 @@
 (function () {
   'use strict';
 
-  var AUTH_URL = 'https://readwise.io/api/v2/auth/';
   var COUNT_URL = 'https://readwise.io/api/v3/list/?category=epub&limit=1';
   var TOKEN_PAGE = 'https://readwise.io/access_token';
 
@@ -40,29 +39,33 @@
     return 'Readwise answered HTTP ' + status + '.';
   }
 
-  // Resolves to {ok: true} or {ok: false, message}. Readwise answers 204 for a
-  // valid token.
+  // Resolves to {ok: true, count} or {ok: false, message}.
+  // The token is checked with a one-item list request rather than Readwise's
+  // /api/v2/auth/ endpoint: that answers 204 No Content, which carries no
+  // Content-Length, and the device relay waits for the keep-alive connection
+  // to close, then fails with HTTP 502.
   async function checkToken(api, token) {
     var res;
     try {
-      res = await api.relay('GET', AUTH_URL, authHeaders(token), '');
+      res = await api.relay('GET', COUNT_URL, authHeaders(token), '');
     } catch (e) {
       return { ok: false, message: 'Could not reach Readwise: ' + ((e && e.message) || e) + '.' };
     }
-    if (res.status === 204 || res.status === 200) return { ok: true };
-    return { ok: false, message: describeStatus(res.status) };
+    if (res.status !== 200) return { ok: false, message: describeStatus(res.status) };
+    var count;
+    try {
+      count = JSON.parse(res.body).count;
+    } catch (e) {
+      count = undefined;
+    }
+    if (typeof count !== 'number') return { ok: false, message: 'Readwise sent an unexpected answer. Try again.' };
+    return { ok: true, count: count };
   }
 
   // Number of EPUBs in the library, or null when it cannot be read.
   async function countEpubs(api, token) {
-    try {
-      var res = await api.relay('GET', COUNT_URL, authHeaders(token), '');
-      if (res.status !== 200) return null;
-      var count = JSON.parse(res.body).count;
-      return typeof count === 'number' ? count : null;
-    } catch (e) {
-      return null;
-    }
+    var check = await checkToken(api, token);
+    return check.ok ? check.count : null;
   }
 
   async function saveConfig(api, config) {
@@ -80,7 +83,7 @@
     }
   }
 
-  // Validates and stores a token. Resolves to {ok, message}.
+  // Validates and stores a token. Resolves to {ok, message, token, count}.
   async function connect(api, rawToken) {
     var token = normalizeToken(rawToken);
     if (!token) return { ok: false, message: 'That does not look like a Readwise access token.' };
@@ -91,7 +94,7 @@
     } catch (e) {
       return { ok: false, message: 'Could not save the token: ' + ((e && e.message) || e) + '.' };
     }
-    return { ok: true, message: 'Connected.', token: token };
+    return { ok: true, message: 'Connected.', token: token, count: check.count };
   }
 
   async function disconnect(api) {
@@ -129,15 +132,16 @@
       el('connected').style.display = connected ? '' : 'none';
     };
 
-    var showConnected = async function (token) {
+    var showConnected = function (count) {
       show(true);
-      setStatus('Connected.');
-      setStatus(connectedText(await countEpubs(api, token)));
+      setStatus(connectedText(count));
     };
 
     var config = await readConfig(api, fetchFn);
     if (normalizeToken(config.token)) {
-      await showConnected(config.token);
+      show(true);
+      setStatus('Connected.');
+      showConnected(await countEpubs(api, config.token));
     } else {
       show(false);
       setStatus('Not connected.');
@@ -151,7 +155,7 @@
         var result = await connect(api, el('token').value);
         if (result.ok) {
           el('token').value = '';
-          await showConnected(result.token);
+          showConnected(result.count);
         } else {
           setStatus(result.message);
         }

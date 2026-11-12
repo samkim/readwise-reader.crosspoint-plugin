@@ -25,7 +25,7 @@ Fallback without the web card: create `config.json` containing `{"token":"YOUR_T
 | List | `GET https://readwise.io/api/v3/list/?category=epub&location=<loc>&limit=100` with `Authorization: Token {token}` |
 | Resolve file | `GET https://readwise.io/api/v3/list/?id={id}&withRawSourceUrl=true`, reading `results.0.raw_source_url` (a presigned S3 link valid for one hour) |
 | Download | `GET <raw_source_url>` with **no** Authorization header. The firmware drops download headers when `url_path` returns a full URL. |
-| Token check (web card) | `GET https://readwise.io/api/v2/auth/` → `204` |
+| Token check (web card) | `GET https://readwise.io/api/v3/list/?category=epub&limit=1` → `200` with a JSON `count`. Not `/api/v2/auth/`: its `204 No Content` has no `Content-Length`, so the device relay waits for the keep-alive connection to close and fails with 502. |
 
 ## Firmware support
 
